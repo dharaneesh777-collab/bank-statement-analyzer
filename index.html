@@ -130,18 +130,6 @@
             <span id="metricBalanceText" class="metric-trend">Calculated as Credit - Debit</span>
           </div>
         </div>
-
-        <!-- Metric 4: Success Rate -->
-        <div class="card metric-card metric-success-rate">
-          <div class="metric-icon-box">
-            <i data-lucide="check-circle-2"></i>
-          </div>
-          <div class="metric-info">
-            <span class="metric-label">Success Rate</span>
-            <span id="metricSuccessVal" class="metric-value">0%</span>
-            <span id="metricSuccessCount" class="metric-trend" style="color: var(--warning);">0 failed transactions</span>
-          </div>
-        </div>
       </section>
 
       <!-- Charts Section -->
@@ -225,14 +213,6 @@
                 <option value="Cashback & Refunds">Cashbacks & Refunds</option>
                 <option value="Others">Others</option>
               </select>
-
-              <!-- Status Filter -->
-              <select id="statusFilter" class="select-filter">
-                <option value="ALL">All Statuses</option>
-                <option value="SUCCESS">Success</option>
-                <option value="FAILED">Failed</option>
-                <option value="PENDING">Pending</option>
-              </select>
             </div>
 
             <button id="clearFiltersBtn" class="btn btn-secondary">
@@ -247,7 +227,6 @@
                 <tr>
                   <th id="dateHeader" style="width: 140px; cursor: pointer; user-select: none;">Date & Time <i data-lucide="chevron-down" style="width: 14px; height: 14px; vertical-align: middle; margin-left: 4px;"></i></th>
                   <th>Transaction Details</th>
-                  <th style="width: 100px;">Status</th>
                   <th style="width: 120px;">Category Override</th>
                   <th id="amountHeader" style="width: 120px; text-align: right; cursor: pointer; user-select: none;">Amount <i data-lucide="chevrons-up-down" style="width: 14px; height: 14px; vertical-align: middle; margin-left: 4px;"></i></th>
                 </tr>

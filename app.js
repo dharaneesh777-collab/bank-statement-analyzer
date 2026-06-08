@@ -176,7 +176,6 @@ function setupEventListeners() {
   const searchInput = document.getElementById('searchInput');
   const typeFilter = document.getElementById('typeFilter');
   const categoryFilter = document.getElementById('categoryFilter');
-  const statusFilter = document.getElementById('statusFilter');
   const clearFiltersBtn = document.getElementById('clearFiltersBtn');
   
   const prevPageBtn = document.getElementById('prevPageBtn');
@@ -262,7 +261,7 @@ function setupEventListeners() {
     });
   }
 
-  [typeFilter, categoryFilter, statusFilter].forEach(filter => {
+  [typeFilter, categoryFilter].forEach(filter => {
     if (filter) {
       filter.addEventListener('change', () => {
         currentPage = 1;
@@ -276,7 +275,6 @@ function setupEventListeners() {
       if (searchInput) searchInput.value = '';
       if (typeFilter) typeFilter.value = 'ALL';
       if (categoryFilter) categoryFilter.value = 'ALL';
-      if (statusFilter) statusFilter.value = 'ALL';
       currentSortColumn = 'date';
       currentSortDirection = 'desc';
       updateSortIcons();
@@ -943,7 +941,6 @@ function applyFilters() {
   const query = document.getElementById('searchInput').value.toLowerCase().trim();
   const type = document.getElementById('typeFilter').value;
   const category = document.getElementById('categoryFilter').value;
-  const status = document.getElementById('statusFilter').value;
 
   filteredData = transactionsData.filter(tx => {
     // Search query filter
@@ -957,11 +954,8 @@ function applyFilters() {
     
     // Category filter
     const matchesCategory = category === 'ALL' || tx.category === category;
-    
-    // Status filter
-    const matchesStatus = status === 'ALL' || tx.status === status;
 
-    return matchesQuery && matchesType && matchesCategory && matchesStatus;
+    return matchesQuery && matchesType && matchesCategory;
   });
 
   currentPage = 1;
@@ -1011,12 +1005,9 @@ function calculateMetrics(data) {
   let totalCredit = 0;
   let debitCount = 0;
   let creditCount = 0;
-  let successCount = 0;
-  let failedCount = 0;
 
   data.forEach(tx => {
     if (tx.status === 'SUCCESS') {
-      successCount++;
       if (tx.type === 'DEBIT') {
         totalDebit += tx.amount;
         debitCount++;
@@ -1024,14 +1015,10 @@ function calculateMetrics(data) {
         totalCredit += tx.amount;
         creditCount++;
       }
-    } else {
-      failedCount++;
     }
   });
 
   const netBalance = totalCredit - totalDebit;
-  const totalSuccessTransactions = successCount + failedCount;
-  const successRate = totalSuccessTransactions > 0 ? Math.round((successCount / totalSuccessTransactions) * 100) : 100;
 
   // Render values
   document.getElementById('metricDebitVal').textContent = formatCurrency(totalDebit);
@@ -1047,9 +1034,6 @@ function calculateMetrics(data) {
   } else {
     balanceEl.style.color = '#f87171'; // light red
   }
-
-  document.getElementById('metricSuccessVal').textContent = `${successRate}%`;
-  document.getElementById('metricSuccessCount').textContent = `${failedCount} failed transactions`;
 }
 
 // Currency Formatter
@@ -1392,7 +1376,7 @@ function renderTable() {
   if (filteredData.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="5" style="text-align: center; padding: 40px;">
+        <td colspan="4" style="text-align: center; padding: 40px;">
           <div style="font-size: 24px; opacity: 0.2; margin-bottom: 8px;">🔍</div>
           <div style="font-weight: 600; color: var(--text-secondary);">No matching transactions found</div>
           <div style="font-size: 12px; color: var(--text-muted);">Adjust your filters or query strings.</div>
@@ -1418,11 +1402,6 @@ function renderTable() {
     const displayDate = dateParts[0];
     const displayTime = dateParts[1] ? dateParts.slice(1).join(', ') : '';
 
-    // Status Badge
-    let statusClass = 'badge-success';
-    if (tx.status === 'FAILED') statusClass = 'badge-failed';
-    else if (tx.status === 'PENDING') statusClass = 'badge-pending';
-
     // Amount color class
     const amtSign = tx.type === 'DEBIT' ? '-' : '+';
     const amtClass = tx.type === 'DEBIT' ? 'debit' : 'credit';
@@ -1444,9 +1423,6 @@ function renderTable() {
         <div class="tx-sub-desc">
           ID: ${tx.id} ${tx.utr ? `| UTR: ${tx.utr}` : ''}
         </div>
-      </td>
-      <td>
-        <span class="badge ${statusClass}">${tx.status}</span>
       </td>
       <td>
         <div class="category-dropdown-container">
@@ -1798,7 +1774,6 @@ function renderMonthView() {
               <tr>
                 <th style="width: 140px;">Date & Time</th>
                 <th>Transaction Details</th>
-                <th style="width: 100px;">Status</th>
                 <th style="width: 130px;">Category</th>
                 <th style="width: 120px; text-align: right;">Amount</th>
               </tr>
@@ -1807,9 +1782,6 @@ function renderMonthView() {
               ${txs.map(tx => {
                 const amtSign = tx.type === 'DEBIT' ? '-' : '+';
                 const amtClass = tx.type === 'DEBIT' ? 'debit' : 'credit';
-                let statusClass = 'badge-success';
-                if (tx.status === 'FAILED') statusClass = 'badge-failed';
-                else if (tx.status === 'PENDING') statusClass = 'badge-pending';
                 
                 return `
                   <tr>
@@ -1821,7 +1793,6 @@ function renderMonthView() {
                       <div class="tx-main-desc">${tx.description}</div>
                       <div class="tx-sub-desc">ID: ${tx.id} ${tx.utr ? `| UTR: ${tx.utr}` : ''}</div>
                     </td>
-                    <td><span class="badge ${statusClass}">${tx.status}</span></td>
                     <td>
                       <span class="badge" style="background: rgba(255,255,255,0.04); color: var(--text-secondary); border-left: 3px solid ${CATEGORIES[tx.category]?.color || '#94a3b8'}">
                         ${tx.category}
