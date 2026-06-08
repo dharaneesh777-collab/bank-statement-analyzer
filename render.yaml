@@ -1,5 +1,4 @@
 services:
-  - type: web
+  - type: static
     name: bank-statement-analyzer
-    env: static
-    publishDir: .
+    staticPublishPath: .
