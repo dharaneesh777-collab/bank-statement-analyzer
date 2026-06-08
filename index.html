@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PhonePe Transaction Analyzer & Expense Categorizer</title>
+  <meta name="description" content="Securely upload and parse your PhonePe PDF/CSV statements. Analyze your transaction history and auto-segregate expenses locally in your browser.">
+  <link rel="stylesheet" href="styles.css">
+  
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <!-- PDF.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+  
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+  <!-- Header Section -->
+  <header>
+    <div class="container header-content">
+      <div class="logo-area">
+        <div class="logo-icon">
+          <i data-lucide="landmark" style="width: 22px; height: 22px;"></i>
+        </div>
+        <div class="logo-text">
+          <span>Transaction Analyzer</span>
+        </div>
+      </div>
+      <div class="actions-wrapper">
+        <button id="exportCsvBtn" class="btn btn-secondary" disabled>
+          <i data-lucide="download"></i> Export CSV
+        </button>
+        <button id="printReportBtn" class="btn btn-primary" disabled>
+          <i data-lucide="printer"></i> Save PDF Report
+        </button>
+        <button id="themeToggleBtn" class="btn btn-secondary btn-icon-only" title="Toggle Light/Dark Mode" style="margin-left: 8px;">
+          <i data-lucide="sun" class="sun-icon"></i>
+          <i data-lucide="moon" class="moon-icon" style="display: none;"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    
+    <!-- Input / Upload Panel -->
+    <section class="input-section">
+      <!-- File drop zone -->
+      <div class="card dropzone-container">
+        <h3 style="margin-bottom: 12px; font-weight: 600;">Upload Statement</h3>
+        <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 20px;">
+          Import your PhonePe or bank statements (HDFC, ICICI, SBI, etc.) exported as PDF or upload a CSV file. Processing happens <strong>100% locally</strong> in your browser.
+        </p>
+        <div id="dropzone" class="dropzone">
+          <div class="dropzone-icon">
+            <i data-lucide="upload-cloud"></i>
+          </div>
+          <span class="dropzone-text">Drag & drop your statement file here</span>
+          <span class="dropzone-subtext">Supports PhonePe, HDFC, ICICI, SBI PDFs, or CSVs</span>
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('fileInput').click()">
+            Browse File
+          </button>
+          <input type="file" id="fileInput" class="file-input" accept=".pdf,.csv">
+        </div>
+        
+        <div class="or-divider">OR</div>
+        
+        <!-- Text Paste Zone -->
+        <div class="paste-container">
+          <span style="font-size: 13px; font-weight: 500; color: var(--text-secondary);">Paste raw statement text:</span>
+          <textarea id="pasteArea" class="paste-area" placeholder="Dec 12, 2023, 08:32 PM&#10;Paid to Swiggy&#10;DEBIT ₹150.00&#10;T231212...&#10;UTR: 3345..."></textarea>
+          <button id="parsePasteBtn" class="btn btn-secondary btn-sm" style="align-self: flex-end;">
+            Parse Paste Text
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Empty State (Shown before data is loaded) -->
+    <section id="emptyStateSection" class="card empty-state">
+      <div class="empty-state-icon">
+        <i data-lucide="bar-chart-2"></i>
+      </div>
+      <h3 class="empty-state-title">No Transactions Loaded</h3>
+      <p class="empty-state-desc">
+        Upload your PhonePe or bank statement file, or paste transaction text above to populate the dashboard metrics and visual charts.
+      </p>
+    </section>
+
+    <!-- Dashboard Content (Hidden by default, shown when transactions are parsed) -->
+    <div id="dashboardContainer" style="display: none;">
+      
+      <!-- Metrics Grid -->
+      <section class="metrics-grid">
+        <!-- Metric 1: Total Debit -->
+        <div class="card metric-card metric-total-spent">
+          <div class="metric-icon-box">
+            <i data-lucide="arrow-up-right"></i>
+          </div>
+          <div class="metric-info">
+            <span class="metric-label">Total Debited (Spent)</span>
+            <span id="metricDebitVal" class="metric-value">₹0.00</span>
+            <span id="metricDebitCount" class="metric-trend" style="color: var(--danger);">0 transactions</span>
+          </div>
+        </div>
+
+        <!-- Metric 2: Total Credit -->
+        <div class="card metric-card metric-total-received">
+          <div class="metric-icon-box">
+            <i data-lucide="arrow-down-left"></i>
+          </div>
+          <div class="metric-info">
+            <span class="metric-label">Total Credited (Income)</span>
+            <span id="metricCreditVal" class="metric-value">₹0.00</span>
+            <span id="metricCreditCount" class="metric-trend" style="color: var(--success);">0 transactions</span>
+          </div>
+        </div>
+
+        <!-- Metric 3: Net Balance -->
+        <div class="card metric-card metric-balance">
+          <div class="metric-icon-box">
+            <i data-lucide="wallet"></i>
+          </div>
+          <div class="metric-info">
+            <span class="metric-label">Net Balance</span>
+            <span id="metricBalanceVal" class="metric-value">₹0.00</span>
+            <span id="metricBalanceText" class="metric-trend">Calculated as Credit - Debit</span>
+          </div>
+        </div>
+
+        <!-- Metric 4: Success Rate -->
+        <div class="card metric-card metric-success-rate">
+          <div class="metric-icon-box">
+            <i data-lucide="check-circle-2"></i>
+          </div>
+          <div class="metric-info">
+            <span class="metric-label">Success Rate</span>
+            <span id="metricSuccessVal" class="metric-value">0%</span>
+            <span id="metricSuccessCount" class="metric-trend" style="color: var(--warning);">0 failed transactions</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Charts Section -->
+      <section class="charts-grid">
+        <!-- Left: Donut Chart -->
+        <div class="card chart-card">
+          <div class="chart-header">
+            <h3 class="chart-title">Spending by Category</h3>
+          </div>
+          <div class="chart-body">
+            <canvas id="categoryChart"></canvas>
+          </div>
+          <div id="categoryLegend" class="chart-custom-legend"></div>
+        </div>
+
+        <!-- Right: Trend Chart -->
+        <div class="card chart-card">
+          <div class="chart-header">
+            <h3 class="chart-title">Transaction Daily Trend</h3>
+          </div>
+          <div class="chart-body">
+            <canvas id="trendChart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- Top Spending Merchants Grid -->
+      <section id="topMerchantsSection" class="card top-merchants-card" style="display: none; margin-bottom: 30px;">
+        <div class="chart-header" style="margin-bottom: 20px;">
+          <h3 class="chart-title">Top Spending Merchants</h3>
+          <span class="badge badge-success">Top Outlets</span>
+        </div>
+        <div id="topMerchantsGrid" class="top-merchants-grid">
+          <!-- Dynamically populated merchant cards -->
+        </div>
+      </section>
+
+      <!-- View Toggle Options -->
+      <div class="view-toggle-container" style="display: flex; gap: 12px; margin-bottom: 20px;">
+        <button id="viewListBtn" class="btn btn-primary">
+          <i data-lucide="list"></i> All Transactions
+        </button>
+        <button id="viewMonthBtn" class="btn btn-secondary">
+          <i data-lucide="calendar"></i> Month-wise Segregation
+        </button>
+      </div>
+
+      <!-- Container 1: List View -->
+      <div id="listViewContainer">
+        <!-- Transactions List Card -->
+        <section class="card">
+          <div class="chart-header" style="margin-bottom: 16px;">
+            <h3 class="chart-title">Transaction History</h3>
+            <span id="transactionCountBadge" class="badge badge-success">0 transactions</span>
+          </div>
+
+          <!-- Controls (Filters, Search) -->
+          <div class="dashboard-controls">
+            <div class="filters-wrapper">
+              <div class="search-input-wrapper">
+                <i data-lucide="search" class="search-icon"></i>
+                <input type="text" id="searchInput" class="search-input" placeholder="Search merchant, ID, or UTR...">
+              </div>
+              
+              <!-- Type Filter -->
+              <select id="typeFilter" class="select-filter">
+                <option value="ALL">All Types</option>
+                <option value="DEBIT">Debits Only</option>
+                <option value="CREDIT">Credits Only</option>
+              </select>
+
+              <!-- Category Filter -->
+              <select id="categoryFilter" class="select-filter">
+                <option value="ALL">All Categories</option>
+                <option value="P2P">Peer Transfers (P2P)</option>
+                <option value="Food & Dining">Food & Dining</option>
+                <option value="Shopping & Merchant">Shopping & Merchant</option>
+                <option value="Bills & Recharges">Bills & Recharges</option>
+                <option value="Investments & Finance">Investments & Finance</option>
+                <option value="Travel & Commute">Travel & Commute</option>
+                <option value="Cashback & Refunds">Cashbacks & Refunds</option>
+                <option value="Others">Others</option>
+              </select>
+
+              <!-- Status Filter -->
+              <select id="statusFilter" class="select-filter">
+                <option value="ALL">All Statuses</option>
+                <option value="SUCCESS">Success</option>
+                <option value="FAILED">Failed</option>
+                <option value="PENDING">Pending</option>
+              </select>
+            </div>
+
+            <button id="clearFiltersBtn" class="btn btn-secondary">
+              Clear Filters
+            </button>
+          </div>
+
+          <!-- Table View -->
+          <div class="table-container">
+            <table class="transactions-table">
+              <thead>
+                <tr>
+                  <th id="dateHeader" style="width: 140px; cursor: pointer; user-select: none;">Date & Time <i data-lucide="chevron-down" style="width: 14px; height: 14px; vertical-align: middle; margin-left: 4px;"></i></th>
+                  <th>Transaction Details</th>
+                  <th style="width: 100px;">Status</th>
+                  <th style="width: 120px;">Category Override</th>
+                  <th id="amountHeader" style="width: 120px; text-align: right; cursor: pointer; user-select: none;">Amount <i data-lucide="chevrons-up-down" style="width: 14px; height: 14px; vertical-align: middle; margin-left: 4px;"></i></th>
+                </tr>
+              </thead>
+              <tbody id="transactionsTableBody">
+                <!-- Dynamically populated rows -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Table Pagination & Footer -->
+          <div class="pagination-container">
+            <span id="paginationText">Showing 0 of 0 transactions</span>
+            <div class="pagination-buttons">
+              <button id="prevPageBtn" class="btn btn-secondary btn-sm" disabled>Previous</button>
+              <button id="nextPageBtn" class="btn btn-secondary btn-sm" disabled>Next</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Container 2: Month View -->
+      <div id="monthViewContainer" style="display: none;"></div>
+
+    </div>
+  </main>
+
+  <!-- Processing Spinner Overlay -->
+  <div id="loaderOverlay" class="loader-overlay">
+    <div class="spinner"></div>
+    <div class="loader-text" id="loaderText">Processing statement...</div>
+    <div class="loader-sub" id="loaderSubText">Extracting details client-side. Please wait.</div>
+  </div>
+
+  <!-- Main JavaScript File -->
+  <script src="app.js"></script>
+</body>
+</html>
