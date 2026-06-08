@@ -1,4 +1,5 @@
 services:
-  - type: static
+  - type: web
     name: bank-statement-analyzer
+    runtime: static
     staticPublishPath: .
