@@ -22,6 +22,24 @@ function parseDateString(dateStr) {
   
   const str = String(dateStr).trim();
   
+  // Handle GPay Date format: e.g. "01Mar,2026, 08:28AM" or "01Mar,2026"
+  const gpayMatch = /^(\d{1,2})([A-Za-z]{3}),\s*(\d{4})(?:,?\s*(\d{1,2}:\d{2})\s*(AM|PM)?)?$/i.exec(str);
+  if (gpayMatch) {
+    const day = gpayMatch[1];
+    const month = gpayMatch[2];
+    const year = gpayMatch[3];
+    const time = gpayMatch[4] || '';
+    const ampm = gpayMatch[5] || '';
+    let formatted = `${day} ${month} ${year}`;
+    if (time) {
+      formatted += ` ${time}`;
+      if (ampm) {
+        formatted += ` ${ampm}`;
+      }
+    }
+    return new Date(formatted);
+  }
+  
   // Regex for DD/MM/YY or DD/MM/YYYY or DD-MM-YY or DD-MM-YYYY or DD.MM.YYYY
   // Optional time: HH:MM or HH:MM:SS, optional AM/PM
   const partsMatch = /^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?$/i.exec(str);
@@ -232,6 +250,9 @@ function setupEventListeners() {
         try {
           let parsed = parsePhonePeText(text);
           if (parsed.length === 0) {
+            parsed = parseGPayText(text);
+          }
+          if (parsed.length === 0) {
             parsed = parseGeneralStatement(text);
           }
           if (parsed.length === 0) {
@@ -383,14 +404,14 @@ function handleFile(file) {
   const extension = file.name.split('.').pop().toLowerCase();
   
   if (extension === 'pdf') {
-    showLoader('Reading PhonePe Statement PDF...', 'Extracting textual content page by page...');
+    showLoader('Reading Statement PDF...', 'Extracting textual content page by page...');
     parsePDF(file);
   } else if (extension === 'csv') {
     showLoader('Reading CSV Statement...', 'Parsing columns and matching rows...');
     parseCSV(file);
   } else {
     console.warn('Invalid file format:', extension);
-    alert('Invalid file format. Please upload a PhonePe PDF statement or a CSV file.');
+    alert('Invalid file format. Please upload a PDF statement (PhonePe, GPay, Bank) or a CSV file.');
   }
 }
 
@@ -419,13 +440,18 @@ function parsePDF(file) {
       let parsed = parsePhonePeText(fullText);
       console.log('PhonePe parser parsed transactions:', parsed.length);
       if (parsed.length === 0) {
+        console.log('Calling GPay parser...');
+        parsed = parseGPayText(fullText);
+        console.log('GPay parser parsed transactions:', parsed.length);
+      }
+      if (parsed.length === 0) {
         console.log('Calling general statement parser...');
         parsed = parseGeneralStatement(fullText);
         console.log('General parser parsed transactions:', parsed.length);
       }
       if (parsed.length === 0) {
         console.warn('No transactions parsed from the text.');
-        alert('Could not find any transactions in the statement PDF. Please verify it is a valid PhonePe or bank statement (HDFC, ICICI, SBI, etc.) and is not password-protected.');
+        alert('Could not find any transactions in the statement PDF. Please verify it is a valid PhonePe, GPay, or bank statement (HDFC, ICICI, SBI, etc.) and is not password-protected.');
         hideLoader();
         return;
       }
@@ -917,6 +943,103 @@ function parsePhonePeText(text) {
     }
   }
 
+  return transactions;
+}
+
+// GPay Statement Parser
+function parseGPayText(text) {
+  if (!text) return [];
+  const lines = text.split('\n').map(l => l.trim());
+  const transactions = [];
+  
+  for (let idx = 0; idx < lines.length; idx++) {
+    const line = lines[idx];
+    const upiMatch = /UPITransactionID:\s*(\d+)/i.exec(line);
+    if (upiMatch) {
+      const utr = upiMatch[1];
+      const id = 'TXN-GPY-' + utr;
+      
+      let dateStr = 'Unknown Date';
+      let description = 'UPI Payment';
+      let amount = 0.0;
+      let type = 'DEBIT';
+      let status = 'SUCCESS';
+      
+      // Date and time are usually at idx - 3 and idx - 2 respectively
+      let checkDate = lines[idx - 3];
+      let checkTime = lines[idx - 2];
+      
+      if (checkDate && /^\d{1,2}[A-Za-z]{3},\s*\d{4}$/.test(checkDate)) {
+        const m = /^(\d{1,2})([A-Za-z]{3}),\s*(\d{4})$/.exec(checkDate);
+        if (m) {
+          dateStr = `${m[1]} ${m[2]} ${m[3]}`;
+        } else {
+          dateStr = checkDate;
+        }
+      }
+      
+      if (checkTime && /^\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(checkTime)) {
+        const m = /^(\d{1,2}:\d{2})\s*(AM|PM)$/i.exec(checkTime);
+        if (m) {
+          dateStr = dateStr + ', ' + m[1] + ' ' + m[2].toUpperCase();
+        } else {
+          dateStr = dateStr + ', ' + checkTime;
+        }
+      }
+      
+      // Description/Merchant is usually at idx - 1
+      if (idx - 1 >= 0) {
+        const descLine = lines[idx - 1];
+        if (descLine && !/^\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(descLine) && !/^\d{1,2}[A-Za-z]{3},\s*\d{4}$/.test(descLine)) {
+          description = descLine;
+        }
+      }
+      
+      // Look forwards for amount (usually within 4 lines after the transaction ID)
+      for (let j = 1; j <= 4; j++) {
+        const nextIdx = idx + j;
+        if (nextIdx >= lines.length) break;
+        const nextLine = lines[nextIdx];
+        if (!nextLine) continue;
+        
+        const amtMatch = /(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d+)?)/gi.exec(nextLine);
+        if (amtMatch) {
+          amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+          break;
+        }
+      }
+      
+      // Clean description and determine Debit/Credit type
+      if (description.toLowerCase().includes('receivedfrom') || description.toLowerCase().includes('received from')) {
+        type = 'CREDIT';
+        description = description.replace(/^Receivedfrom/i, '').replace(/^Received from/i, '');
+      } else if (description.toLowerCase().includes('paidto') || description.toLowerCase().includes('paid to')) {
+        type = 'DEBIT';
+        description = description.replace(/^Paidto/i, '').replace(/^Paid to/i, '');
+      } else if (description.toLowerCase().includes('sentto') || description.toLowerCase().includes('sent to')) {
+        type = 'DEBIT';
+        description = description.replace(/^Sentto/i, '').replace(/^Sent to/i, '');
+      }
+      
+      // Add spaces before camelcase capitals (e.g., MeeshoTechnologies -> Meesho Technologies)
+      description = description.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+      
+      if (!description || description.length < 3) {
+        description = 'UPI Transaction';
+      }
+      
+      transactions.push({
+        id: id,
+        date: dateStr,
+        description: description,
+        type: type,
+        amount: amount,
+        status: status,
+        utr: utr,
+        category: categorizeTransaction(description, type)
+      });
+    }
+  }
   return transactions;
 }
 
