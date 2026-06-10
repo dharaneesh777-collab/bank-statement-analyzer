@@ -22,8 +22,8 @@ function parseDateString(dateStr) {
   
   const str = String(dateStr).trim();
   
-  // Handle GPay Date format: e.g. "01Mar,2026, 08:28AM" or "01Mar,2026"
-  const gpayMatch = /^(\d{1,2})([A-Za-z]{3}),\s*(\d{4})(?:,?\s*(\d{1,2}:\d{2})\s*(AM|PM)?)?$/i.exec(str);
+  // Handle GPay Date format: e.g. "01Mar,2026, 08:28AM" or "01 Mar, 2026, 08:28 AM"
+  const gpayMatch = /^(\d{1,2})\s*([A-Za-z]{3}),\s*(\d{4})(?:,?\s*(\d{1,2}:\d{2})\s*(AM|PM)?)?$/i.exec(str);
   if (gpayMatch) {
     const day = gpayMatch[1];
     const month = gpayMatch[2];
@@ -715,7 +715,7 @@ function extractCleanMerchantName(desc) {
 function detectAndParse(text) {
   if (!text) return [];
   
-  const isGPay = /Google Pay|UPITransactionID/i.test(text);
+  const isGPay = /Google Pay|UPITransactionID|UPI\s*Transaction\s*ID/i.test(text);
   const isPhonePe = /PhonePe|\bT[a-zA-Z0-9]{18,24}\b/i.test(text);
   
   let parsed = [];
@@ -970,7 +970,7 @@ function parseGPayText(text) {
   
   for (let idx = 0; idx < lines.length; idx++) {
     const line = lines[idx];
-    const upiMatch = /UPITransactionID:\s*(\d+)/i.exec(line);
+    const upiMatch = /(?:UPI\s*Transaction\s*ID|UPITransactionID):\s*(\d+)/i.exec(line);
     if (upiMatch) {
       const utr = upiMatch[1];
       const id = 'TXN-GPY-' + utr;
@@ -981,47 +981,72 @@ function parseGPayText(text) {
       let type = 'DEBIT';
       let status = 'SUCCESS';
       
-      // Date and time are usually at idx - 3 and idx - 2 respectively
-      let checkDate = lines[idx - 3];
-      let checkTime = lines[idx - 2];
-      
-      if (checkDate && /^\d{1,2}[A-Za-z]{3},\s*\d{4}$/.test(checkDate)) {
-        const m = /^(\d{1,2})([A-Za-z]{3}),\s*(\d{4})$/.exec(checkDate);
-        if (m) {
-          dateStr = `${m[1]} ${m[2]} ${m[3]}`;
-        } else {
-          dateStr = checkDate;
-        }
-      }
-      
-      if (checkTime && /^\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(checkTime)) {
-        const m = /^(\d{1,2}:\d{2})\s*(AM|PM)$/i.exec(checkTime);
-        if (m) {
-          dateStr = dateStr + ', ' + m[1] + ' ' + m[2].toUpperCase();
-        } else {
-          dateStr = dateStr + ', ' + checkTime;
-        }
-      }
-      
-      // Description/Merchant is usually at idx - 1
-      if (idx - 1 >= 0) {
-        const descLine = lines[idx - 1];
-        if (descLine && !/^\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(descLine) && !/^\d{1,2}[A-Za-z]{3},\s*\d{4}$/.test(descLine)) {
-          description = descLine;
-        }
-      }
-      
-      // Look forwards for amount (usually within 4 lines after the transaction ID)
-      for (let j = 1; j <= 4; j++) {
-        const nextIdx = idx + j;
-        if (nextIdx >= lines.length) break;
-        const nextLine = lines[nextIdx];
-        if (!nextLine) continue;
+      // Check if horizontal structure (PDF.js)
+      const hasTimeInCurrent = /^\s*\d{1,2}:\d{2}\s*(?:AM|PM)/i.test(line);
+      const prevLine = idx - 1 >= 0 ? lines[idx - 1] : '';
+      const hasDateAndAmtInPrev = prevLine && 
+        /^\s*\d{1,2}\s+[A-Za-z]{3},\s*\d{4}/.test(prevLine) && 
+        /(?:₹|Rs\.?|INR)/.test(prevLine);
         
-        const amtMatch = /(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d+)?)/gi.exec(nextLine);
+      if (hasTimeInCurrent && hasDateAndAmtInPrev) {
+        const dateMatch = /^\s*(\d{1,2}\s+[A-Za-z]{3},\s*\d{4})/.exec(prevLine);
+        const amtMatch = /(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d+)?)\s*$/.exec(prevLine);
+        const timeMatch = /^\s*(\d{1,2}:\d{2}\s*(?:AM|PM))/i.exec(line);
+        
+        let datePart = dateMatch ? dateMatch[1] : 'Unknown Date';
+        let timePart = timeMatch ? timeMatch[1] : '';
+        dateStr = timePart ? `${datePart}, ${timePart}` : datePart;
+        
         if (amtMatch) {
           amount = parseFloat(amtMatch[1].replace(/,/g, ''));
-          break;
+        }
+        
+        if (dateMatch && amtMatch) {
+          description = prevLine.substring(dateMatch[0].length, prevLine.lastIndexOf(amtMatch[0])).trim();
+        } else {
+          description = prevLine;
+        }
+      } else {
+        // Vertical Structure (Python / copy-paste)
+        let checkDate = lines[idx - 3];
+        let checkTime = lines[idx - 2];
+        
+        if (checkDate && /^\d{1,2}[A-Za-z]{3},\s*\d{4}$/.test(checkDate)) {
+          const m = /^(\d{1,2})([A-Za-z]{3}),\s*(\d{4})$/.exec(checkDate);
+          if (m) {
+            dateStr = `${m[1]} ${m[2]} ${m[3]}`;
+          } else {
+            dateStr = checkDate;
+          }
+        }
+        
+        if (checkTime && /^\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(checkTime)) {
+          const m = /^(\d{1,2}:\d{2})\s*(AM|PM)$/i.exec(checkTime);
+          if (m) {
+            dateStr = dateStr + ', ' + m[1] + ' ' + m[2].toUpperCase();
+          } else {
+            dateStr = dateStr + ', ' + checkTime;
+          }
+        }
+        
+        if (idx - 1 >= 0) {
+          const descLine = lines[idx - 1];
+          if (descLine && !/^\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(descLine) && !/^\d{1,2}[A-Za-z]{3},\s*\d{4}$/.test(descLine)) {
+            description = descLine;
+          }
+        }
+        
+        for (let j = 1; j <= 4; j++) {
+          const nextIdx = idx + j;
+          if (nextIdx >= lines.length) break;
+          const nextLine = lines[nextIdx];
+          if (!nextLine) continue;
+          
+          const amtMatch = /(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d+)?)/gi.exec(nextLine);
+          if (amtMatch) {
+            amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+            break;
+          }
         }
       }
       
@@ -1037,7 +1062,6 @@ function parseGPayText(text) {
         description = description.replace(/^Sentto/i, '').replace(/^Sent to/i, '');
       }
       
-      // Add spaces before camelcase capitals (e.g., MeeshoTechnologies -> Meesho Technologies)
       description = description.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
       
       if (!description || description.length < 3) {
