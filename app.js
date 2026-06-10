@@ -248,13 +248,7 @@ function setupEventListeners() {
       showLoader('Parsing pasted text...', 'Applying regex parsers...');
       setTimeout(() => {
         try {
-          let parsed = parsePhonePeText(text);
-          if (parsed.length === 0) {
-            parsed = parseGPayText(text);
-          }
-          if (parsed.length === 0) {
-            parsed = parseGeneralStatement(text);
-          }
+          let parsed = detectAndParse(text);
           if (parsed.length === 0) {
             alert('Could not find any transactions in the pasted text. Try copying entire rows from your transaction statement.');
             hideLoader();
@@ -437,18 +431,8 @@ function parsePDF(file) {
       }
       
       console.log('Full extracted text length:', fullText.length);
-      let parsed = parsePhonePeText(fullText);
-      console.log('PhonePe parser parsed transactions:', parsed.length);
-      if (parsed.length === 0) {
-        console.log('Calling GPay parser...');
-        parsed = parseGPayText(fullText);
-        console.log('GPay parser parsed transactions:', parsed.length);
-      }
-      if (parsed.length === 0) {
-        console.log('Calling general statement parser...');
-        parsed = parseGeneralStatement(fullText);
-        console.log('General parser parsed transactions:', parsed.length);
-      }
+      let parsed = detectAndParse(fullText);
+      console.log('Parser parsed transactions count:', parsed.length);
       if (parsed.length === 0) {
         console.warn('No transactions parsed from the text.');
         alert('Could not find any transactions in the statement PDF. Please verify it is a valid PhonePe, GPay, or bank statement (HDFC, ICICI, SBI, etc.) and is not password-protected.');
@@ -725,6 +709,38 @@ function extractCleanMerchantName(desc) {
   
   // Title case formatting helper
   return name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
+
+// Universal Signature-based Parsing dispatcher
+function detectAndParse(text) {
+  if (!text) return [];
+  
+  const isGPay = /Google Pay|UPITransactionID/i.test(text);
+  const isPhonePe = /PhonePe|\bT[a-zA-Z0-9]{18,24}\b/i.test(text);
+  
+  let parsed = [];
+  
+  if (isGPay) {
+    console.log('Detected GPay signature. Running GPay parser...');
+    parsed = parseGPayText(text);
+    if (parsed.length > 0) return parsed;
+  }
+  
+  if (isPhonePe) {
+    console.log('Detected PhonePe signature. Running PhonePe parser...');
+    parsed = parsePhonePeText(text);
+    if (parsed.length > 0) return parsed;
+  }
+  
+  // Fallbacks: Try parsers in order of specificity
+  console.log('No signature matches or specific parser returned 0. Trying fallbacks...');
+  parsed = parsePhonePeText(text);
+  if (parsed.length > 0) return parsed;
+  
+  parsed = parseGPayText(text);
+  if (parsed.length > 0) return parsed;
+  
+  return parseGeneralStatement(text);
 }
 
 // Dual-layered regex text parser
